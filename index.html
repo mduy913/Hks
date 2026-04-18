@@ -1,0 +1,195 @@
+<!DOCTYPE html>
+<html lang="vi">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
+    <title>LUCKYWIN - OFFICIAL SYSTEM</title>
+    <script src="https://www.gstatic.com/firebasejs/8.10.0/firebase-app.js"></script>
+    <script src="https://www.gstatic.com/firebasejs/8.10.0/firebase-database.js"></script>
+    <style>
+        :root { --gold: #ffdf00; --bg: #050505; --card: #121212; }
+        body { background: var(--bg); color: #fff; margin: 0; font-family: sans-serif; overflow: hidden; }
+        .page { display: none; height: 100vh; width: 100vw; overflow-y: auto; padding-bottom: 80px; }
+        .active { display: block; }
+        
+        /* AUTH FORM */
+        .auth-screen { background: linear-gradient(rgba(0,0,0,0.8), rgba(0,0,0,0.8)), url('https://i.imgur.com/e8pE8QY.jpeg') center/cover; display: flex; align-items: center; justify-content: center; height: 100vh; }
+        .auth-card { background: rgba(20,20,20,0.95); padding: 30px; border-radius: 20px; border: 1px solid var(--gold); width: 85%; max-width: 400px; text-align: center; }
+        input { width: 100%; padding: 12px; margin: 10px 0; background: #000; border: 1px solid #333; color: #fff; border-radius: 8px; }
+        .btn-gold { background: var(--gold); color: #000; padding: 12px; border: none; width: 100%; border-radius: 8px; font-weight: bold; cursor: pointer; }
+
+        /* QR DEPOSIT */
+        .qr-box { background: #fff; padding: 15px; border-radius: 15px; width: 250px; margin: 20px auto; }
+        .qr-box img { width: 100%; display: block; }
+        .bank-info { background: #1a1a1a; padding: 15px; border-radius: 10px; margin: 10px; border: 1px solid #333; }
+
+        /* ADMIN PANEL */
+        .adm-header { background: #000; padding: 15px; border-bottom: 2px solid var(--gold); font-weight: bold; color: var(--gold); }
+        .log-item { background: #111; padding: 10px; margin: 5px; border-radius: 5px; font-size: 12px; border-left: 3px solid var(--gold); }
+    </style>
+</head>
+<body>
+
+    <div id="p-auth" class="page active">
+        <div class="auth-screen">
+            <div class="auth-card">
+                <h2 style="color:var(--gold)">LUCKYWIN</h2>
+                <div id="auth-mode-title">ĐĂNG NHẬP</div>
+                <input type="text" id="au-u" placeholder="Tên tài khoản">
+                <input type="password" id="au-p" placeholder="Mật khẩu">
+                <button class="btn-gold" id="btn-auth-main" onclick="handleAuth()">VÀO HỆ THỐNG</button>
+                <p style="font-size:12px; color:#888; margin-top:15px" onclick="toggleAuthMode()">Chưa có tài khoản? <span style="color:var(--gold)">Đăng ký</span></p>
+            </div>
+        </div>
+    </div>
+
+    <div id="p-lobby" class="page">
+        <div style="padding:15px; background:#000; display:flex; justify-content:space-between; align-items:center;">
+            <b style="color:var(--gold)" onclick="checkAdminAccess()">LUCKYWIN</b>
+            <div style="border:1px solid var(--gold); padding:5px 10px; border-radius:15px">💰 <span id="u-bal">0</span></div>
+        </div>
+
+        <div style="padding:20px">
+            <div class="bank-info">
+                <h3 style="margin-top:0; color:var(--gold)">NẠP TIỀN QUA VIETQR</h3>
+                <input type="number" id="dep-amt" placeholder="Nhập số tiền muốn nạp" oninput="updateQR()">
+                <div class="qr-box">
+                    <img id="qr-img" src="https://i.ibb.co/XfXfXfX/IMG-1727.jpg" alt="VietQR"> 
+                </div>
+                <div style="text-align:left; font-size:13px">
+                    <p>Ngân hàng: <b>MB BANK</b></p>
+                    <p>Số TK: <b>0342981313</b></p>
+                    <p>Chủ TK: <b>NGUYEN MINH DUY</b></p>
+                    <p>Nội dung: <b id="qr-memo" style="color:var(--gold)">NAP [USER]</b></p>
+                </div>
+                <button class="btn-gold" onclick="confirmDep()">XÁC NHẬN ĐÃ CHUYỂN</button>
+            </div>
+        </div>
+    </div>
+
+    <div id="p-admin" class="page" style="background:#000">
+        <div class="adm-header">HỆ THỐNG QUẢN TRỊ VIÊN</div>
+        <div style="padding:15px">
+            <h4 style="color:#888">YÊU CẦU NẠP TIỀN CHỜ DUYỆT</h4>
+            <div id="adm-dep-list"></div>
+            
+            <h4 style="color:#888; margin-top:20px">ĐIỀU CHỈNH SỐ DƯ NHANH</h4>
+            <input type="text" id="adm-target" placeholder="ID khách">
+            <input type="number" id="adm-val" placeholder="Số tiền (+/-)">
+            <button class="btn-gold" onclick="admUpdate()">CẬP NHẬT</button>
+            <button class="btn-gold" style="margin-top:10px; background:#222; color:#fff" onclick="showPage('p-lobby')">THOÁT ADMIN</button>
+        </div>
+    </div>
+
+<script>
+    // --- FIREBASE CONFIG ---
+    const firebaseConfig = { databaseURL: "https://shopmduy-default-rtdb.asia-southeast1.firebasedatabase.app" };
+    firebase.initializeApp(firebaseConfig);
+    const db = firebase.database();
+
+    let curU = null;
+    let isRegMode = false;
+
+    function showPage(id) {
+        document.querySelectorAll('.page').forEach(p => p.classList.remove('active'));
+        document.getElementById(id).classList.add('active');
+    }
+
+    function toggleAuthMode() {
+        isRegMode = !isRegMode;
+        document.getElementById('auth-mode-title').innerText = isRegMode ? "ĐĂNG KÝ MỚI" : "ĐĂNG NHẬP";
+        document.getElementById('btn-auth-main').innerText = isRegMode ? "TẠO TÀI KHOẢN" : "VÀO HỆ THỐNG";
+    }
+
+    // --- XỬ LÝ ĐĂNG KÝ / ĐĂNG NHẬP ---
+    function handleAuth() {
+        const u = document.getElementById('au-u').value.trim().toLowerCase();
+        const p = document.getElementById('au-p').value;
+        if(!u || !p) return alert("Nhập đủ đi sếp!");
+
+        if(isRegMode) {
+            db.ref('users/'+u).once('value', s => {
+                if(s.exists()) alert("ID này có người dùng rồi!");
+                else {
+                    db.ref('users/'+u).set({ password: p, balance: 0, role: 'user' }).then(() => {
+                        alert("Đăng ký thành công!");
+                        isRegMode = false; handleAuth();
+                    });
+                }
+            });
+        } else {
+            db.ref('users/'+u).once('value', s => {
+                if(s.exists() && s.val().password === p) {
+                    curU = u;
+                    initLobby();
+                    showPage('p-lobby');
+                } else alert("Sai thông tin rồi sếp!");
+            });
+        }
+    }
+
+    // --- GIAO DIỆN LOBBY & QR ---
+    function initLobby() {
+        db.ref('users/'+curU+'/balance').on('value', s => {
+            document.getElementById('u-bal').innerText = (s.val() || 0).toLocaleString();
+        });
+        document.getElementById('qr-memo').innerText = "NAP " + curU.toUpperCase();
+    }
+
+    function updateQR() {
+        const amt = document.getElementById('dep-amt').value;
+        // Sếp có thể dùng API VietQR để tạo mã động có số tiền:
+        // const qrUrl = `https://api.vietqr.io/image/970422-0342981313-vInSsh0.jpg?amount=${amt}&addInfo=NAP%20${curU}`;
+        // Hoặc dùng cái ảnh sếp gửi cố định (IMG_1727.jpeg)
+    }
+
+    function confirmDep() {
+        const amt = document.getElementById('dep-amt').value;
+        if(!amt || amt < 10000) return alert("Nạp tối thiểu 10k!");
+        db.ref('requests/deposit').push({ u: curU, amt: parseInt(amt), status: 'pending' });
+        alert("Đã gửi yêu cầu! Sếp hãy kiểm tra tài khoản ngân hàng và chờ admin duyệt.");
+    }
+
+    // --- KIỂM TRA QUYỀN ADMIN TỪ FIREBASE ---
+    function checkAdminAccess() {
+        db.ref('users/'+curU).once('value', s => {
+            if(s.val().role === 'admin') {
+                loadAdminData();
+                showPage('p-admin');
+            } else {
+                alert("Bạn không phải Admin hệ thống!");
+            }
+        });
+    }
+
+    function loadAdminData() {
+        db.ref('requests/deposit').on('value', s => {
+            let h = "";
+            s.forEach(item => {
+                const d = item.val();
+                if(d.status === 'pending') {
+                    h += `<div class="log-item">
+                        <b>Khách: ${d.u}</b> - Số tiền: ${d.amt.toLocaleString()}đ
+                        <br><button onclick="approveDep('${item.key}', '${d.u}', ${d.amt})" style="background:green; border:none; color:#fff; padding:5px; margin-top:5px; border-radius:4px">DUYỆT NẠP</button>
+                    </div>`;
+                }
+            });
+            document.getElementById('adm-dep-list').innerHTML = h || "Chưa có yêu cầu mới.";
+        });
+    }
+
+    function approveDep(key, u, amt) {
+        db.ref('users/'+u+'/balance').transaction(v => (v || 0) + amt);
+        db.ref('requests/deposit/'+key).update({ status: 'done' });
+        alert("Đã cộng " + amt + "đ cho " + u);
+    }
+
+    function admUpdate() {
+        const u = document.getElementById('adm-target').value.trim().toLowerCase();
+        const v = parseInt(document.getElementById('adm-val').value);
+        db.ref('users/'+u+'/balance').transaction(curr => (curr || 0) + v);
+        alert("Thực thi xong!");
+    }
+</script>
+</body>
+</html>
